@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login or Register</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            min-height: 100vh;
+            margin: 0;
+            background:
+                linear-gradient(105deg, #ffe2f8cc 33%, #faf7fbcc 88%),
+                url('/static/css/js/images/canvabg1.png') center center/cover no-repeat;
+            font-family: 'Inter', Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .auth-container {
+            background: #fff;
+            margin-top: 40px;
+            border-radius: 23px;
+            box-shadow: 0 6px 44px rgba(185,19,114,0.09);
+            padding: 44px 34px 40px 34px;
+            min-width: 320px;
+            max-width: 375px;
+            width:100%;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+        }
+        .auth-container h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.1rem;
+            color: #b91372;
+            margin-bottom: 12px;
+            letter-spacing: 1.6px;
+            font-weight: 700;
+        }
+        .auth-container h3 {
+            font-family: 'Playfair Display', serif;
+            color: #ed4caa;
+            margin-top: 14px;
+            margin-bottom: 18px;
+            font-size: 1.22rem;
+            letter-spacing: 2px;
+        }
+        .form-toggle-buttons {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 21px;
+            width: 100%;
+            justify-content: center;
+        }
+        .form-toggle-buttons button {
+            background: linear-gradient(90deg, #ed4caa 30%, #b91372 100%);
+            color: #fff;
+            font-size: 1.08rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 18px;
+            padding: 8px 32px;
+            transition: background 0.2s, box-shadow 0.18s, transform 0.18s;
+            box-shadow: 0 2px 16px #ed4caa1a;
+            cursor: pointer;
+        }
+        .form-toggle-buttons button:hover {
+            background: linear-gradient(90deg, #b91372 15%, #ed4caa 80%);
+            transform: translateY(-2px) scale(1.06);
+            box-shadow: 0 4px 22px #ed4caa38;
+        }
+        form {
+            width:100%;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            margin-bottom: 7px;
+        }
+        label {
+            margin-bottom: 3px;
+            margin-top: 10px;
+            color: #6d527a;
+            font-size: .97rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        input[type="text"], input[type="password"] {
+            padding: 9px 14px;
+            border-radius: 12px;
+            border: 1.5px solid #ed4caa47;
+            background: #fff8fc;
+            font-size: 1.06rem;
+            margin-bottom: 7px;
+            outline: none;
+            transition: border-color 0.16s;
+        }
+        input[type="text"]:focus, input[type="password"]:focus {
+            border-color: #b91372;
+        }
+        button[type="submit"] {
+            margin-top: 13px;
+            background: linear-gradient(90deg, #b91372 25%, #ed4caa 100%);
+            color: #fff;
+            font-size: 1.12rem;
+            font-weight: 700;
+            border: none;
+            border-radius: 17px;
+            padding: 11px;
+            box-shadow: 0 2px 20px #b913726a;
+            cursor: pointer;
+            letter-spacing: 0.06em;
+            transition: background .17s, transform .17s, box-shadow .19s;
+        }
+        button[type="submit"]:hover {
+            background: linear-gradient(90deg, #ed4caa 25%, #b91372 90%);
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 5px 30px #ed4caa3c;
+        }
+        a {
+            color: #b91372;
+            text-decoration: none;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            font-size: 0.98rem;
+        }
+        a:hover {
+            text-decoration: underline;
+            color: #ed4caa;
+        }
+        @media (max-width: 500px) {
+            .auth-container {
+                padding: 22px 6px 16px 6px;
+                min-width: unset;
+                max-width: 99vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <script>
+          window.onload = function() {
+            {% for category, message in messages %}
+              alert("{{ message }}");
+            {% endfor %}
+          }
+        </script>
+      {% endif %}
+    {% endwith %}
+    <div class="auth-container">
+        <h2>Login or Register</h2>
+        <div class="form-toggle-buttons">
+            <button onclick="showForm('login-form')">Login</button>
+            <button onclick="showForm('register-form')">Register</button>
+        </div>
+        <form id="login-form" action="/userlogin" method="post" style="display: block;">
+            <h3>User Login</h3>
+            <label for="login-username">Username:</label>
+            <input type="text" name="username" id="login-username" required>
+            <label for="login-password">Password:</label>
+            <input type="password" name="password" id="login-password" required>
+            <button type="submit">Login</button>
+        </form>
+        <form id="register-form" action="/register" method="post" style="display: none;">
+            <h3>Register</h3>
+            <label for="reg-username">Username:</label>
+            <input type="text" name="username" id="reg-username" required>
+            <label for="reg-password">Password:</label>
+            <input type="password" name="password" id="reg-password" required>
+            <button type="submit">Register</button>
+        </form>
+        <div style="margin-top:20px;">
+            <a href="/login">Admin Login</a>
+        </div>
+    </div>
+    <script>
+        function showForm(formId) {
+            document.getElementById('login-form').style.display = (formId === 'login-form') ? 'block' : 'none';
+            document.getElementById('register-form').style.display = (formId === 'register-form') ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
