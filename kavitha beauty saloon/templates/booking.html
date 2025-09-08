@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking - Kavitha Beauty Salon</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background:
+          linear-gradient(105deg, #ffe2f8cc 33%, #faf7fbcc 88%),
+          url('/static/css/js/images/canvabg2.png') center center/cover no-repeat;
+      }
+    .booking-form label {
+      font-family: 'Great Vibes', cursive;
+      font-size: 1.18em;
+      color: #b85c8d;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    .booking-form input,
+    .booking-form select {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.08em;
+      color: #62305d;
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid #e9b6d3;
+      margin-bottom: 10px;
+    }
+    .service-checkboxes label {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.08em;
+      color: #62305d;
+      margin-bottom: 6px;
+      letter-spacing: 0.5px;
+    }
+    button[type="submit"] {
+      background: linear-gradient(90deg, #ed4caa 10%, #b91372 90%);
+      color: #fff;
+      font-family: 'Great Vibes', cursive;
+      font-size: 1.08em;
+      font-weight: 600;
+      letter-spacing: 1px;
+      border: none;
+      border-radius: 18px;
+      padding: 10px 28px;
+      box-shadow: 0 2px 8px rgba(184,92,141,0.08);
+      transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+    }
+    button[type="submit"]:hover {
+      background: linear-gradient(90deg, #b91372 10%, #ed4caa 90%);
+      color: #fff;
+      box-shadow: 0 6px 22px rgba(185,19,114,0.18);
+    }
+    </style>
+</head>
+<body>
+    {% with messages = get_flashed_messages(with_categories=True) %}
+      {% if messages %}
+        <script>
+          window.onload = function() {
+            {% for category, message in messages %}
+              alert("{{ message }}");
+            {% endfor %}
+          }
+        </script>
+      {% endif %}
+    {% endwith %}
+    <header>
+        <h1 style="display:flex; align-items:center; justify-content:center; gap:12px; text-align:center;">
+        Book an Appointment
+     <img src="/static/css/js/images/logo.png" class="logo" style="width:40px; height:40px; border-radius:50%; object-fit:cover; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    </h1>
+    </header>
+    <nav>
+        <ul class="navbar-list">
+            <li><a href="/">Home</a></li>
+            <li><a href="/services">Services</a></li>
+            <li><a href="/gallery">Gallery</a></li>
+            <li><a href="/booking">Booking</a></li>
+            <li><a href="/contact">Contact</a></li>
+        </ul>
+    </nav>
+    <style>
+    .navbar-list {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      list-style: none;
+      padding: 0;
+      margin: 0 0 18px 0;
+    }
+    .navbar-list li a {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.18rem;
+      color: #b85c8d;
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 1px;
+      padding: 6px 18px;
+      border-radius: 16px;
+      transition: background 0.2s, color 0.2s;
+    }
+    .navbar-list li a:hover {
+      background: #fff0f6;
+      color: #d63384;
+    }
+    </style>
+    <main>
+        <form action="/booking" method="post" class="booking-form">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" required>
+
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" required>
+
+            <label for="phone">Phone:</label>
+            <input type="tel" id="phone" name="phone" required>
+
+            <label>Services:</label>
+            <div class="service-checkboxes">
+                <label><input type="checkbox" name="services" value="399 Offer"> 399 Offer (₹399)</label><br>
+                <label><input type="checkbox" name="services" value="599 Offer"> 599 Offer (₹599)</label><br>
+                <label><input type="checkbox" name="services" value="799 Offer"> 799 Offer (₹799)</label><br>
+                <label><input type="checkbox" name="services" value="Full arm waxing"> Full arm waxing (₹249)</label><br>
+                <label><input type="checkbox" name="services" value="Under arm waxing"> Under arm waxing (₹99)</label><br>
+                <label><input type="checkbox" name="services" value="Half leg waxing"> Half leg waxing (₹199)</label><br>
+            </div>
+
+            <label for="date">Date:</label>
+            <input type="date" id="date" name="date" required>
+
+            <label for="slot">Slot:</label>
+            <select id="slot" name="slot" required>
+              <option value="">Select a slot</option>
+            </select>
+
+            <button type="submit">Book Now</button>
+        </form>
+        <script>
+        const weekdaySlots = [
+            "8:00-9:00", "9:00-10:00", "10:00-11:00", "11:00-12:00", "12:00-1:00", "1:00-2:00", "2:00-3:00", "3:00-4:00", "4:00-5:00", "5:00-6:00", "6:00-7:00"
+        ];
+        const sundaySlots = [
+            "9:00-10:00", "10:00-11:00", "11:00-12:00", "12:00-1:00", "1:00-2:00", "2:00-3:00", "3:00-4:00"
+        ];
+        const dateInput = document.getElementById('date');
+        const slotSelect = document.getElementById('slot');
+        dateInput.addEventListener('change', function() {
+          const date = new Date(this.value);
+          const day = date.getDay(); // 0 = Sunday, 1 = Monday, ...
+          let slots = (day === 0) ? sundaySlots : weekdaySlots;
+          slotSelect.innerHTML = '<option value="">Select a slot</option>';
+          slots.forEach(slot => {
+            slotSelect.innerHTML += `<option value="${slot}">${slot}</option>`;
+          });
+        });
+        </script>
+    </main>
+    <footer>
+        <p>&copy; 2024 Kavitha Beauty Salon. All rights reserved.</p>
+    </footer>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
