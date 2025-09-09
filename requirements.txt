@@ -3,3 +3,6 @@ Flask-MySQLdb==1.0.1
 Flask-Mail==0.9.1
 mysqlclient==2.2.4
 gunicorn==22.0.0
+Flask==3.0.3
+gunicorn
+mysql-connector-python
