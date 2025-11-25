@@ -2,6 +2,7 @@ from flask import Flask, render_template, redirect, url_for, session, request, f
 import mysql.connector
 import sqlite3
 import os
+import logging
 from config import Config, ProductionConfig, DevelopmentConfig
 from flask_mail import Mail, Message
 
@@ -12,119 +13,139 @@ if os.environ.get('FLASK_ENV') == 'production':
 else:
     app.config.from_object(DevelopmentConfig)
 
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Initialize Mail
 mail = Mail(app)
 
 # Database connection
 def get_db_connection():
-    if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
-        # Use SQLite for free hosting
-        conn = sqlite3.connect('beauty_salon.db')
-        conn.row_factory = sqlite3.Row
-        return conn, conn.cursor()
-    else:
-        # Use MySQL for local development
-        conn = mysql.connector.connect(
-            host=app.config['MYSQL_HOST'],
-            user=app.config['MYSQL_USER'],
-            password=app.config['MYSQL_PASSWORD'],
-            database=app.config['MYSQL_DB']
-        )
-        return conn, conn.cursor(dictionary=True)
+    try:
+        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+            # Use SQLite for free hosting
+            conn = sqlite3.connect('beauty_salon.db')
+            conn.row_factory = sqlite3.Row
+            return conn, conn.cursor()
+        else:
+            # Use MySQL for local development
+            conn = mysql.connector.connect(
+                host=app.config['MYSQL_HOST'],
+                user=app.config['MYSQL_USER'],
+                password=app.config['MYSQL_PASSWORD'],
+                database=app.config['MYSQL_DB']
+            )
+            return conn, conn.cursor(dictionary=True)
+    except Exception as e:
+        logger.error(f"Database connection error: {e}")
+        raise
 
 # Initialize database tables
 def init_db():
-    conn, cursor = get_db_connection()
-    
-    if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
-        # SQLite syntax
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            is_admin INTEGER DEFAULT 0
-        )
-        ''')
+    try:
+        conn, cursor = get_db_connection()
         
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS appointments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            service TEXT NOT NULL,
-            date TEXT NOT NULL,
-            slot TEXT NOT NULL,
-            completed INTEGER DEFAULT 0,
-            total_amount REAL DEFAULT 0,
-            amount_paid REAL DEFAULT 0,
-            confirmed INTEGER DEFAULT 0
-        )
-        ''')
+        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+            # SQLite syntax
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                is_admin INTEGER DEFAULT 0
+            )
+            ''')
+            
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS appointments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                service TEXT NOT NULL,
+                date TEXT NOT NULL,
+                slot TEXT NOT NULL,
+                completed INTEGER DEFAULT 0,
+                total_amount REAL DEFAULT 0,
+                amount_paid REAL DEFAULT 0,
+                confirmed INTEGER DEFAULT 0
+            )
+            ''')
+            
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                message TEXT NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            
+            # Create default admin user for production
+            cursor.execute("SELECT * FROM users WHERE username=? AND is_admin=1", ('admin',))
+            if not cursor.fetchone():
+                cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)", ('admin', 'admin123', 1))
+        else:
+            # MySQL syntax
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                is_admin BOOLEAN DEFAULT FALSE
+            )
+            ''')
+            
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS appointments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) NOT NULL,
+                phone VARCHAR(30) NOT NULL,
+                service VARCHAR(100) NOT NULL,
+                date DATE NOT NULL,
+                slot VARCHAR(20) NOT NULL,
+                completed TINYINT(1) DEFAULT 0,
+                total_amount DECIMAL(10,2) DEFAULT 0,
+                amount_paid DECIMAL(10,2) DEFAULT 0,
+                confirmed TINYINT(1) DEFAULT 0
+            )
+            ''')
+            
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS contacts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) NOT NULL,
+                message TEXT NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            
+            # Create default admin user for development
+            cursor.execute("SELECT * FROM users WHERE username=%s AND is_admin=TRUE", ('admin',))
+            if not cursor.fetchone():
+                cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", ('admin', 'admin123', True))
         
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS contacts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL,
-            message TEXT NOT NULL,
-            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        # Create default admin user for production
-        cursor.execute("SELECT * FROM users WHERE username=? AND is_admin=1", ('admin',))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)", ('admin', 'admin123', 1))
-    else:
-        # MySQL syntax
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(100) UNIQUE NOT NULL,
-            password VARCHAR(100) NOT NULL,
-            is_admin BOOLEAN DEFAULT FALSE
-        )
-        ''')
-        
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS appointments (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(100) NOT NULL,
-            email VARCHAR(100) NOT NULL,
-            phone VARCHAR(30) NOT NULL,
-            service VARCHAR(100) NOT NULL,
-            date DATE NOT NULL,
-            slot VARCHAR(20) NOT NULL,
-            completed TINYINT(1) DEFAULT 0,
-            total_amount DECIMAL(10,2) DEFAULT 0,
-            amount_paid DECIMAL(10,2) DEFAULT 0,
-            confirmed TINYINT(1) DEFAULT 0
-        )
-        ''')
-        
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS contacts (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(100) NOT NULL,
-            email VARCHAR(100) NOT NULL,
-            message TEXT NOT NULL,
-            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        # Create default admin user for development
-        cursor.execute("SELECT * FROM users WHERE username=%s AND is_admin=TRUE", ('admin',))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", ('admin', 'admin123', True))
-    
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization error: {e}")
 
-init_db()
+# Initialize database with error handling
+try:
+    init_db()
+except Exception as e:
+    logger.error(f"Failed to initialize database: {e}")
 
 # ---------------- ROUTES ---------------- #
+
+@app.route('/test')
+def test():
+    return "App is working!"
 
 @app.route('/')
 def home():
@@ -284,66 +305,81 @@ def loginorregister():
 
 @app.route('/register', methods=['POST'])
 def register():
-    username = request.form['username']
-    password = request.form['password']
-    
-    conn, cursor = get_db_connection()
     try:
-        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
-            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)", (username, password, 0))
-        else:
-            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", (username, password, False))
-        conn.commit()
-        flash('Successfully registered!', 'success')
-    except Exception:
-        flash('Username already exists.', 'error')
-    finally:
-        conn.close()
+        username = request.form['username']
+        password = request.form['password']
+        
+        conn, cursor = get_db_connection()
+        try:
+            if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+                cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)", (username, password, 0))
+            else:
+                cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", (username, password, False))
+            conn.commit()
+            flash('Successfully registered!', 'success')
+        except Exception as e:
+            logger.error(f"Registration error: {e}")
+            flash('Username already exists.', 'error')
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Registration form error: {e}")
+        flash('Registration failed. Please try again.', 'error')
     return redirect(url_for('loginorregister'))
 
 @app.route('/userlogin', methods=['POST'])
 def userlogin():
-    username = request.form['username']
-    password = request.form['password']
-    
-    conn, cursor = get_db_connection()
-    if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
-        cursor.execute("SELECT * FROM users WHERE username=? AND password=? AND is_admin=0", (username, password))
-    else:
-        cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=FALSE", (username, password))
-    
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user:
-        session['user'] = username
-        flash('Login successful!', 'success')
-        return redirect(url_for('home'))
-    else:
-        flash('Invalid credentials.', 'error')
-        return redirect(url_for('loginorregister'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
+    try:
         username = request.form['username']
         password = request.form['password']
         
         conn, cursor = get_db_connection()
         if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
-            cursor.execute("SELECT * FROM users WHERE username=? AND password=? AND is_admin=1", (username, password))
+            cursor.execute("SELECT * FROM users WHERE username=? AND password=? AND is_admin=0", (username, password))
         else:
-            cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=TRUE", (username, password))
+            cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=FALSE", (username, password))
         
-        admin = cursor.fetchone()
+        user = cursor.fetchone()
         conn.close()
         
-        if admin:
-            session['admin'] = username
-            flash('Admin login successful!', 'success')
-            return redirect(url_for('admin'))
+        if user:
+            session['user'] = username
+            flash('Login successful!', 'success')
+            return redirect(url_for('home'))
         else:
-            flash('Invalid admin credentials.', 'error')
+            flash('Invalid credentials.', 'error')
+            return redirect(url_for('loginorregister'))
+    except Exception as e:
+        logger.error(f"User login error: {e}")
+        flash('Login failed. Please try again.', 'error')
+        return redirect(url_for('loginorregister'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        try:
+            username = request.form['username']
+            password = request.form['password']
+            
+            conn, cursor = get_db_connection()
+            if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+                cursor.execute("SELECT * FROM users WHERE username=? AND password=? AND is_admin=1", (username, password))
+            else:
+                cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=TRUE", (username, password))
+            
+            admin = cursor.fetchone()
+            conn.close()
+            
+            if admin:
+                session['admin'] = username
+                flash('Admin login successful!', 'success')
+                return redirect(url_for('admin'))
+            else:
+                flash('Invalid admin credentials.', 'error')
+                return render_template('login.html')
+        except Exception as e:
+            logger.error(f"Admin login error: {e}")
+            flash('Login failed. Please try again.', 'error')
             return render_template('login.html')
     return render_template('login.html')
 
@@ -351,6 +387,16 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('home'))
+
+# Error handlers
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"Internal server error: {error}")
+    return render_template('home.html'), 500
+
+@app.errorhandler(404)
+def not_found(error):
+    return render_template('home.html'), 404
 
 # ---------------- RUN ---------------- #
 
