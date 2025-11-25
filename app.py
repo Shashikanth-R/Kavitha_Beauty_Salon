@@ -32,8 +32,6 @@ def get_db_connection():
         )
         return conn, conn.cursor(dictionary=True)
 
-conn, cursor = get_db_connection()
-
 # Initialize database tables
 def init_db():
     conn, cursor = get_db_connection()
@@ -74,6 +72,11 @@ def init_db():
             submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+        
+        # Create default admin user for production
+        cursor.execute("SELECT * FROM users WHERE username=? AND is_admin=1", ('admin',))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)", ('admin', 'admin123', 1))
     else:
         # MySQL syntax
         cursor.execute('''
@@ -110,12 +113,16 @@ def init_db():
             submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+        
+        # Create default admin user for development
+        cursor.execute("SELECT * FROM users WHERE username=%s AND is_admin=TRUE", ('admin',))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", ('admin', 'admin123', True))
     
     conn.commit()
     conn.close()
 
 init_db()
-
 
 # ---------------- ROUTES ---------------- #
 
@@ -123,16 +130,13 @@ init_db()
 def home():
     return render_template('home.html')
 
-
 @app.route('/services')
 def services():
     return render_template('services.html')
 
-
 @app.route('/gallery')
 def gallery():
     return render_template('gallery.html')
-
 
 @app.route('/booking', methods=['GET', 'POST'])
 def booking():
@@ -172,54 +176,75 @@ def booking():
 
     return render_template('booking.html')
 
-
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
     if request.method == 'POST':
         name = request.form['name']
         email = request.form['email']
         message = request.form['message']
-        cursor.execute(
-            "INSERT INTO contacts (name, email, message) VALUES (%s, %s, %s)",
-            (name, email, message))
+        
+        conn, cursor = get_db_connection()
+        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+            cursor.execute(
+                "INSERT INTO contacts (name, email, message) VALUES (?, ?, ?)",
+                (name, email, message))
+        else:
+            cursor.execute(
+                "INSERT INTO contacts (name, email, message) VALUES (%s, %s, %s)",
+                (name, email, message))
         conn.commit()
+        conn.close()
         flash('Your message was sent successfully!', 'success')
         return redirect(url_for('contact'))
     return render_template('contact.html')
 
-
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
+    conn, cursor = get_db_connection()
+    
     if request.method == 'POST':
         appt_id = request.form.get('appt_id')
         completed = 1 if request.form.get('completed') == 'on' else 0
-        cursor.execute("UPDATE appointments SET completed = %s WHERE id = %s", (completed, appt_id))
-
-        if 'amount_paid' in request.form:
-            amount_paid = int(request.form.get('amount_paid'))
-            cursor.execute("UPDATE appointments SET amount_paid = %s WHERE id = %s", (amount_paid, appt_id))
+        
+        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+            cursor.execute("UPDATE appointments SET completed = ? WHERE id = ?", (completed, appt_id))
+            if 'amount_paid' in request.form:
+                amount_paid = int(request.form.get('amount_paid'))
+                cursor.execute("UPDATE appointments SET amount_paid = ? WHERE id = ?", (amount_paid, appt_id))
+        else:
+            cursor.execute("UPDATE appointments SET completed = %s WHERE id = %s", (completed, appt_id))
+            if 'amount_paid' in request.form:
+                amount_paid = int(request.form.get('amount_paid'))
+                cursor.execute("UPDATE appointments SET amount_paid = %s WHERE id = %s", (amount_paid, appt_id))
         conn.commit()
 
     cursor.execute("SELECT * FROM appointments ORDER BY date, slot")
     appointments = cursor.fetchall()
     cursor.execute("SELECT * FROM contacts ORDER BY submitted_at DESC")
     messages = cursor.fetchall()
+    conn.close()
     return render_template('admin.html', appointments=appointments, messages=messages)
 
-
-# ✅ UPDATED EMAIL CONFIRMATION / CANCELLATION ROUTE
 @app.route('/admin/confirm', methods=['POST'])
 def admin_confirm():
     appt_id = request.form.get('appt_id')
     confirmed = int(request.form.get('confirmed', 0))
-    cursor.execute("UPDATE appointments SET confirmed = %s WHERE id = %s", (confirmed, appt_id))
-    conn.commit()
-
-    cursor.execute("SELECT name, email, slot, service, date FROM appointments WHERE id = %s", (appt_id,))
+    
+    conn, cursor = get_db_connection()
+    if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+        cursor.execute("UPDATE appointments SET confirmed = ? WHERE id = ?", (confirmed, appt_id))
+        conn.commit()
+        cursor.execute("SELECT name, email, slot, service, date FROM appointments WHERE id = ?", (appt_id,))
+    else:
+        cursor.execute("UPDATE appointments SET confirmed = %s WHERE id = %s", (confirmed, appt_id))
+        conn.commit()
+        cursor.execute("SELECT name, email, slot, service, date FROM appointments WHERE id = %s", (appt_id,))
+    
     appt = cursor.fetchone()
 
     if not appt:
         flash('Appointment not found.', 'error')
+        conn.close()
         return redirect(url_for('admin'))
 
     recipient = appt['email']
@@ -250,33 +275,46 @@ def admin_confirm():
     except Exception as e:
         flash(f'Failed to send email: {e}', 'error')
 
+    conn.close()
     return redirect(url_for('admin'))
-
 
 @app.route('/loginorregister', methods=['GET'])
 def loginorregister():
     return render_template('loginorregister.html')
 
-
 @app.route('/register', methods=['POST'])
 def register():
     username = request.form['username']
     password = request.form['password']
+    
+    conn, cursor = get_db_connection()
     try:
-        cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", (username, password, False))
+        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)", (username, password, 0))
+        else:
+            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", (username, password, False))
         conn.commit()
         flash('Successfully registered!', 'success')
-    except mysql.connector.errors.IntegrityError:
+    except Exception:
         flash('Username already exists.', 'error')
+    finally:
+        conn.close()
     return redirect(url_for('loginorregister'))
-
 
 @app.route('/userlogin', methods=['POST'])
 def userlogin():
     username = request.form['username']
     password = request.form['password']
-    cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=FALSE", (username, password))
+    
+    conn, cursor = get_db_connection()
+    if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+        cursor.execute("SELECT * FROM users WHERE username=? AND password=? AND is_admin=0", (username, password))
+    else:
+        cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=FALSE", (username, password))
+    
     user = cursor.fetchone()
+    conn.close()
+    
     if user:
         session['user'] = username
         flash('Login successful!', 'success')
@@ -285,14 +323,21 @@ def userlogin():
         flash('Invalid credentials.', 'error')
         return redirect(url_for('loginorregister'))
 
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=TRUE", (username, password))
+        
+        conn, cursor = get_db_connection()
+        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+            cursor.execute("SELECT * FROM users WHERE username=? AND password=? AND is_admin=1", (username, password))
+        else:
+            cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s AND is_admin=TRUE", (username, password))
+        
         admin = cursor.fetchone()
+        conn.close()
+        
         if admin:
             session['admin'] = username
             flash('Admin login successful!', 'success')
@@ -302,36 +347,10 @@ def login():
             return render_template('login.html')
     return render_template('login.html')
 
-
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('home'))
-
-
-# ---------------- HELPER ---------------- #
-
-service_prices = {
-    '399 Offer': 399,
-    '599 Offer': 599,
-    '799 Offer': 799,
-    'Full arm waxing': 249,
-    'Under arm waxing': 99,
-    'Half leg waxing': 199,
-    'Haircut': 300,
-    'Facial': 500,
-    'Bridal Makeup': 3000
-}
-
-def update_existing_appointments():
-    cursor.execute("SELECT id, service FROM appointments")
-    all_appts = cursor.fetchall()
-    for appt in all_appts:
-        services = appt['service'].split(', ')
-        total = sum(service_prices.get(s, 0) for s in services)
-        cursor.execute("UPDATE appointments SET total_amount = %s WHERE id = %s", (total, appt['id']))
-    conn.commit()
-
 
 # ---------------- RUN ---------------- #
 
