@@ -1,79 +1,138 @@
-from flask import Flask, render_template, redirect, url_for, session
+from flask import Flask, render_template, redirect, url_for, session, request, flash
 import mysql.connector
-from config import Config
+import sqlite3
+import os
+from config import Config, ProductionConfig, DevelopmentConfig
+from flask_mail import Mail, Message
 
+# Initialize Flask
 app = Flask(__name__)
-app.config.from_object(Config)
+if os.environ.get('FLASK_ENV') == 'production':
+    app.config.from_object(ProductionConfig)
+else:
+    app.config.from_object(DevelopmentConfig)
+
+# Initialize Mail
+mail = Mail(app)
 
 # Database connection
-conn = mysql.connector.connect(
-    host=app.config['MYSQL_HOST'],
-    user=app.config['MYSQL_USER'],
-    password=app.config['MYSQL_PASSWORD'],
-    database=app.config['MYSQL_DB']
-)
-cursor = conn.cursor(dictionary=True)
+def get_db_connection():
+    if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+        # Use SQLite for free hosting
+        conn = sqlite3.connect('beauty_salon.db')
+        conn.row_factory = sqlite3.Row
+        return conn, conn.cursor()
+    else:
+        # Use MySQL for local development
+        conn = mysql.connector.connect(
+            host=app.config['MYSQL_HOST'],
+            user=app.config['MYSQL_USER'],
+            password=app.config['MYSQL_PASSWORD'],
+            database=app.config['MYSQL_DB']
+        )
+        return conn, conn.cursor(dictionary=True)
 
-# Ensure users table exists
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    password VARCHAR(100) NOT NULL,
-    is_admin BOOLEAN DEFAULT FALSE
-)
-''')
-conn.commit()
-# Ensure appointments table exists
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS appointments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) NOT NULL,
-    phone VARCHAR(30) NOT NULL,
-    service VARCHAR(100) NOT NULL,
-    date DATE NOT NULL,
-    slot VARCHAR(20) NOT NULL,
-    completed TINYINT(1) DEFAULT 0,
-    total_amount DECIMAL(10,2) DEFAULT 0,
-    amount_paid DECIMAL(10,2) DEFAULT 0,
-    confirmed TINYINT(1) DEFAULT 0
-)
-''')
-try:
-    cursor.execute('ALTER TABLE appointments ADD COLUMN confirmed TINYINT(1) DEFAULT 0')
+conn, cursor = get_db_connection()
+
+# Initialize database tables
+def init_db():
+    conn, cursor = get_db_connection()
+    
+    if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+        # SQLite syntax
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            service TEXT NOT NULL,
+            date TEXT NOT NULL,
+            slot TEXT NOT NULL,
+            completed INTEGER DEFAULT 0,
+            total_amount REAL DEFAULT 0,
+            amount_paid REAL DEFAULT 0,
+            confirmed INTEGER DEFAULT 0
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            message TEXT NOT NULL,
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+    else:
+        # MySQL syntax
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password VARCHAR(100) NOT NULL,
+            is_admin BOOLEAN DEFAULT FALSE
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS appointments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            email VARCHAR(100) NOT NULL,
+            phone VARCHAR(30) NOT NULL,
+            service VARCHAR(100) NOT NULL,
+            date DATE NOT NULL,
+            slot VARCHAR(20) NOT NULL,
+            completed TINYINT(1) DEFAULT 0,
+            total_amount DECIMAL(10,2) DEFAULT 0,
+            amount_paid DECIMAL(10,2) DEFAULT 0,
+            confirmed TINYINT(1) DEFAULT 0
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contacts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            email VARCHAR(100) NOT NULL,
+            message TEXT NOT NULL,
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+    
     conn.commit()
-except Exception:
-    pass
-for column in [
-    'completed TINYINT(1) DEFAULT 0',
-    'total_amount DECIMAL(10,2) DEFAULT 0',
-    'amount_paid DECIMAL(10,2) DEFAULT 0'
-]:
-    try:
-        cursor.execute(f'ALTER TABLE appointments ADD COLUMN {column}')
-        conn.commit()
-    except Exception:
-        pass
-# Rename amount_pending to total_amount if exists (for schema consistency)
-try:
-    cursor.execute("ALTER TABLE appointments CHANGE amount_pending total_amount DECIMAL(10,2) DEFAULT 0")
-    conn.commit()
-except Exception:
-    pass
-conn.commit()
+    conn.close()
+
+init_db()
+
+
+# ---------------- ROUTES ---------------- #
 
 @app.route('/')
 def home():
     return render_template('home.html')
 
+
 @app.route('/services')
 def services():
     return render_template('services.html')
 
+
 @app.route('/gallery')
 def gallery():
     return render_template('gallery.html')
+
 
 @app.route('/booking', methods=['GET', 'POST'])
 def booking():
@@ -83,8 +142,8 @@ def booking():
         phone = request.form['phone']
         date = request.form['date']
         slot = request.form['slot']
-        # Services selection - may be a list or a single string
         selected_services = request.form.getlist('services')
+
         service_prices = {
             '399 Offer': 399,
             '599 Offer': 599,
@@ -95,25 +154,24 @@ def booking():
         }
         total = sum(service_prices.get(s, 0) for s in selected_services)
         service_str = ', '.join(selected_services)
-        cursor.execute(
-            "INSERT INTO appointments (name, email, phone, service, date, slot, total_amount, amount_paid) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (name, email, phone, service_str, date, slot, total, 0))
+
+        conn, cursor = get_db_connection()
+        if app.config.get('DATABASE_URL') or os.environ.get('FLASK_ENV') == 'production':
+            cursor.execute(
+                "INSERT INTO appointments (name, email, phone, service, date, slot, total_amount, amount_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (name, email, phone, service_str, date, slot, total, 0))
+        else:
+            cursor.execute(
+                "INSERT INTO appointments (name, email, phone, service, date, slot, total_amount, amount_paid) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (name, email, phone, service_str, date, slot, total, 0))
         conn.commit()
+        conn.close()
+
         flash('Successfully booked appointment!', 'success')
         return redirect(url_for('booking'))
+
     return render_template('booking.html')
 
-# Ensure contacts/messages table exists
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS contacts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) NOT NULL,
-    message TEXT NOT NULL,
-    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-''')
-conn.commit()
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -129,67 +187,81 @@ def contact():
         return redirect(url_for('contact'))
     return render_template('contact.html')
 
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
     if request.method == 'POST':
         appt_id = request.form.get('appt_id')
-        # Update completed
         completed = 1 if request.form.get('completed') == 'on' else 0
         cursor.execute("UPDATE appointments SET completed = %s WHERE id = %s", (completed, appt_id))
-        # Update amount_paid based on dropdown
+
         if 'amount_paid' in request.form:
             amount_paid = int(request.form.get('amount_paid'))
             cursor.execute("UPDATE appointments SET amount_paid = %s WHERE id = %s", (amount_paid, appt_id))
         conn.commit()
+
     cursor.execute("SELECT * FROM appointments ORDER BY date, slot")
     appointments = cursor.fetchall()
     cursor.execute("SELECT * FROM contacts ORDER BY submitted_at DESC")
     messages = cursor.fetchall()
     return render_template('admin.html', appointments=appointments, messages=messages)
 
-from flask import request, flash
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
+# ✅ UPDATED EMAIL CONFIRMATION / CANCELLATION ROUTE
 @app.route('/admin/confirm', methods=['POST'])
 def admin_confirm():
     appt_id = request.form.get('appt_id')
     confirmed = int(request.form.get('confirmed', 0))
     cursor.execute("UPDATE appointments SET confirmed = %s WHERE id = %s", (confirmed, appt_id))
     conn.commit()
+
+    cursor.execute("SELECT name, email, slot, service, date FROM appointments WHERE id = %s", (appt_id,))
+    appt = cursor.fetchone()
+
+    if not appt:
+        flash('Appointment not found.', 'error')
+        return redirect(url_for('admin'))
+
+    recipient = appt['email']
+
     if confirmed:
-        cursor.execute("SELECT name, email, slot, service, date FROM appointments WHERE id = %s", (appt_id,))
-        appt = cursor.fetchone()
-        if appt:
-            sender_email = app.config.get('MAIL_SENDER', 'your_email@example.com')
-            receiver_email = appt['email']
-            subject = "Your Booking is Confirmed!"
-            happy_message = f"Dear {appt['name']},\n\nYour booking for {appt['service']} on {appt['date']} at {appt['slot']} is confirmed!\nWe look forward to welcoming you.\n\nThank you for choosing Kavitha Beauty Salon!\n\nBest wishes,\nKavitha Beauty Salon Team"
-            msg = MIMEMultipart()
-            msg['From'] = sender_email
-            msg['To'] = receiver_email
-            msg['Subject'] = subject
-            msg.attach(MIMEText(happy_message, 'plain'))
-            try:
-                with smtplib.SMTP(app.config.get('MAIL_SERVER', 'smtp.gmail.com'), app.config.get('MAIL_PORT', 587)) as server:
-                    server.starttls()
-                    server.login(app.config.get('MAIL_USERNAME', 'your_email@example.com'), app.config.get('MAIL_PASSWORD', 'your_password'))
-                    server.sendmail(sender_email, receiver_email, msg.as_string())
-                flash('Confirmation email sent!', 'success')
-            except Exception as e:
-                flash(f'Failed to send confirmation email: {e}', 'error')
+        subject = "Your Booking is Confirmed!"
+        body = (
+            f"Dear {appt['name']},\n\n"
+            f"Your booking for {appt['service']} on {appt['date']} at {appt['slot']} is confirmed!\n"
+            f"We look forward to welcoming you.\n\n"
+            f"Thank you for choosing Kavitha Beauty Salon!\n\n"
+            f"Best wishes,\nKavitha Beauty Salon Team"
+        )
+    else:
+        subject = "Your Booking is Cancelled"
+        body = (
+            f"Dear {appt['name']},\n\n"
+            f"We regret to inform you that your booking for {appt['service']} on {appt['date']} at {appt['slot']} "
+            f"has been cancelled.\n\n"
+            f"Please contact us for further details.\n\n"
+            f"Best wishes,\nKavitha Beauty Salon Team"
+        )
+
+    try:
+        msg = Message(subject=subject, recipients=[recipient], body=body)
+        mail.send(msg)
+        flash(f'{"Confirmation" if confirmed else "Cancellation"} email sent successfully!', 'success')
+    except Exception as e:
+        flash(f'Failed to send email: {e}', 'error')
+
     return redirect(url_for('admin'))
+
 
 @app.route('/loginorregister', methods=['GET'])
 def loginorregister():
     return render_template('loginorregister.html')
 
+
 @app.route('/register', methods=['POST'])
 def register():
     username = request.form['username']
     password = request.form['password']
-    # By default, registering users are not admins
     try:
         cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (%s, %s, %s)", (username, password, False))
         conn.commit()
@@ -197,6 +269,7 @@ def register():
     except mysql.connector.errors.IntegrityError:
         flash('Username already exists.', 'error')
     return redirect(url_for('loginorregister'))
+
 
 @app.route('/userlogin', methods=['POST'])
 def userlogin():
@@ -211,6 +284,7 @@ def userlogin():
     else:
         flash('Invalid credentials.', 'error')
         return redirect(url_for('loginorregister'))
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -228,23 +302,39 @@ def login():
             return render_template('login.html')
     return render_template('login.html')
 
+
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('home'))
 
 
-if __name__ == '__main__':
-    # Bulk update amount_pending for existing appointments
-    service_prices = {
-        'Haircut': 300,
-        'Facial': 500,
-        'Bridal Makeup': 3000
-    }
+# ---------------- HELPER ---------------- #
+
+service_prices = {
+    '399 Offer': 399,
+    '599 Offer': 599,
+    '799 Offer': 799,
+    'Full arm waxing': 249,
+    'Under arm waxing': 99,
+    'Half leg waxing': 199,
+    'Haircut': 300,
+    'Facial': 500,
+    'Bridal Makeup': 3000
+}
+
+def update_existing_appointments():
     cursor.execute("SELECT id, service FROM appointments")
     all_appts = cursor.fetchall()
     for appt in all_appts:
-        price = service_prices.get(appt['service'], 0)
-        cursor.execute("UPDATE appointments SET total_amount = %s WHERE id = %s", (price, appt['id']))
+        services = appt['service'].split(', ')
+        total = sum(service_prices.get(s, 0) for s in services)
+        cursor.execute("UPDATE appointments SET total_amount = %s WHERE id = %s", (total, appt['id']))
     conn.commit()
-    app.run(debug=True)
+
+
+# ---------------- RUN ---------------- #
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=app.config['DEBUG'])

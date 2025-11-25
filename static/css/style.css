@@ -18,10 +18,12 @@ html {
 *, *:before, *:after {
   box-sizing: inherit;
 }
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@700&display=swap');
+
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Segoe UI', 'Poppins', 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Montserrat', sans-serif;
   background: var(--secondary);
   color: var(--text);
   min-height: 100vh;
@@ -38,6 +40,7 @@ header h1 {
   color: var(--heading);
   letter-spacing: 2px;
   font-weight: 700;
+  font-family: 'Playfair Display', serif;
 }
 nav {
   background: var(--white);
